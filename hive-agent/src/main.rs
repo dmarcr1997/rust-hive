@@ -1,5 +1,8 @@
-use hive_protocol::{Capability, NodeInfo};
+use hive_protocol::{Capability, Heartbeat, NodeInfo};
 use sysinfo::System;
+
+use std::time::Duration;
+use tokio::time::sleep;
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
@@ -33,6 +36,8 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         ],
     };
 
+    let node_id = node.id.clone();
+
     println!("Discovered node:");
     println!("{:#?}", node);
 
@@ -46,6 +51,28 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .error_for_status()?;
 
     println!("Node registered successfully.");
+    loop {
+        system.refresh_cpu_all();
+        system.refresh_memory();
+        let heartbeat = Heartbeat {
+            node_id: node_id.clone(),
+            cpu_usage: system.global_cpu_usage(),
+            memory_used_mb: system.used_memory() / 1024 / 1024,
+        };
 
+        client
+            .post("http://localhost:8080/nodes/heartbeat")
+            .json(&heartbeat)
+            .send()
+            .await?
+            .error_for_status()?;
+         println!(
+            "Heartbeat sent | CPU: {:.1}% | Memory: {} MB",
+            heartbeat.cpu_usage,
+            heartbeat.memory_used_mb
+        );
+
+        sleep(Duration::from_secs(5)).await;
+    }
     Ok(())
 }

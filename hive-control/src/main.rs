@@ -1,5 +1,6 @@
 use axum::{
     extract::State,
+    http::StatusCode,
     routing::{get, post},
     Json, Router,
 };
@@ -53,6 +54,26 @@ async fn list_nodes(
     Json(result)
 }
 
+async fn heartbeat(
+    State(state): State<HiveState>,
+    Json(heartbeat): Json<Heartbeat>
+) -> StatusCode {
+    let mut nodes = state.nodes.write().await;
+    if let Some(node) = nodes.get_mut(&heartbeat.node_id) {
+        node.last_heartbeat = Instant::now();
+        node.cpu_usage = heartbeat.cpu_usage;
+        node.memory_used_mb = heartbeat.memory_used_mb;
+
+        println!("Heartbeat from {} | CPU: {}% | Memory: {} MB", 
+            heartbeat.node_id, heartbeat.cpu_usage,
+            heartbeat.memory_used_mb
+        );
+        StatusCode::NO_CONTENT
+    } else {
+        StatusCode::NOT_FOUND
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let state = HiveState {
@@ -61,6 +82,7 @@ async fn main() {
     let app = Router::new()
         .route("/nodes", get(list_nodes))
         .route("/nodes/register", post(register_node))
+        .route("/nodes/heartbeat", post(heartbeat))
         .with_state(state);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
         .await
