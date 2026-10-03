@@ -26,3 +26,18 @@ pub struct Heartbeat {
     pub cpu_usage: f32,
     pub memory_used_mb: u64
 }
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum NodeStatus {
+    Online,
+    Offline,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeSummary {
+    pub info: NodeInfo,
+    pub status: NodeStatus,
+    pub cpu_usage: f32,
+    pub memory_used_mb: u64,
+    pub last_seen_seconds_ago: u64,
+}

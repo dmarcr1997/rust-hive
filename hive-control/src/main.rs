@@ -5,15 +5,22 @@ use axum::{
     Json, Router,
 };
 
-use hive_protocol::{Heartbeat, NodeInfo};
+use hive_protocol::{
+    Heartbeat,
+    NodeInfo,
+    NodeStatus,
+    NodeSummary,
+};
 
 use std::{
     collections::HashMap,
     sync::Arc,
-    time::Instant,
+    time::{Duration, Instant},
 };
 
 use tokio::sync::RwLock;
+
+const NODE_TIMEOUT: Duration = Duration::from_secs(15);
 
 #[derive(Debug, Clone)]
 struct NodeState {
@@ -45,11 +52,25 @@ async fn register_node(
 
 async fn list_nodes(
     State(state): State<HiveState>
-) -> Json<Vec<NodeInfo>> {
+) -> Json<Vec<NodeSummary>> {
     let nodes = state.nodes.read().await;
     let result = nodes
         .values()
-        .map(|node| node.info.clone())
+        .map(|node| {
+            let elapsed = node.last_heartbeat.elapsed();
+            let status = if elapsed <= NODE_TIMEOUT {
+                NodeStatus::Online
+            } else {
+                NodeStatus::Offline
+            };
+            NodeSummary {
+                info: node.info.clone(),
+                status,
+                cpu_usage: node.cpu_usage,
+                memory_used_mb: node.memory_used_mb,
+                last_seen_seconds_ago: elapsed.as_secs(),
+            }
+        })
         .collect();
     Json(result)
 }
