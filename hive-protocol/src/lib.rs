@@ -1,3 +1,4 @@
+use serde::{Deserialize, Serialize};
 #[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct NodeInfo {
     pub id: String,
@@ -18,12 +19,10 @@ pub enum Capability {
     Tools
 }
 
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
 pub struct Heartbeat {
     pub node_id: String,
     pub cpu_usage: f32,
     pub memory_used_mb: u64
-}
-
-fn main() {
-    println!("Hello, world!");
 }
