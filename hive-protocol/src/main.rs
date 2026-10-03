@@ -1,0 +1,29 @@
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct NodeInfo {
+    pub id: String,
+    pub hostname: String,
+    pub cpu: String,
+    pub cores: usize,
+    pub memory_mb: u64,
+    pub architecture: String,
+    pub capabilities: Vec<Capability>
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub enum Capability {
+    Coordinator,
+    Inference,
+    Rag,
+    Storage,
+    Tools
+}
+
+pub struct Heartbeat {
+    pub node_id: String,
+    pub cpu_usage: f32,
+    pub memory_used_mb: u64
+}
+
+fn main() {
+    println!("Hello, world!");
+}
