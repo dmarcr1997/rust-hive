@@ -10,7 +10,7 @@ pub struct NodeInfo {
     pub capabilities: Vec<Capability>
 }
 
-#[derive(Debug, Clone, Serialize, Deserialize)]
+#[derive(Debug, Clone, Serialize, Deserialize, PartialEq, Eq)]
 pub enum Capability {
     Coordinator,
     Inference,
@@ -40,4 +40,14 @@ pub struct NodeSummary {
     pub cpu_usage: f32,
     pub memory_used_mb: u64,
     pub last_seen_seconds_ago: u64,
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskRequest {
+    pub capability: Capability
+}
+
+#[derive(Debug, Clone, Serialize, Deserialize)]
+pub struct TaskAssignment {
+    pub node_id: String
 }

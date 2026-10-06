@@ -10,6 +10,8 @@ use hive_protocol::{
     NodeInfo,
     NodeStatus,
     NodeSummary,
+    TaskAssignment,
+    TaskRequest
 };
 
 use std::{
@@ -95,6 +97,26 @@ async fn heartbeat(
     }
 }
 
+async fn assign_task(
+    State(state): State<HiveState>,
+    Json(task_request): Json<TaskRequest>
+) -> Result<Json<TaskAssignment>, StatusCode> {
+    let nodes = state.nodes.read().await;
+
+    let node = nodes
+        .values()
+        .filter(|node| node.last_heartbeat.elapsed() <= NODE_TIMEOUT)
+        .find(|node| {
+            node.info.capabilities.contains(&task_request.capability)
+        });
+    match node {
+        Some(node) => Ok(Json(TaskAssignment {
+            node_id: node.info.id.clone()
+        })),
+        None => Err(StatusCode::SERVICE_UNAVAILABLE),
+    }
+}
+
 #[tokio::main]
 async fn main() {
     let state = HiveState {
@@ -104,6 +126,7 @@ async fn main() {
         .route("/nodes", get(list_nodes))
         .route("/nodes/register", post(register_node))
         .route("/nodes/heartbeat", post(heartbeat))
+        .route("/tasks/assign", post(assign_task))
         .with_state(state);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
         .await

@@ -33,6 +33,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         architecture,
         capabilities: vec![
             Capability::Tools,
+            Capability::Inference,
         ],
     };
 
