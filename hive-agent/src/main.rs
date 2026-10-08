@@ -18,11 +18,12 @@ use std::sync::Arc;
 
 use sysinfo::System;
 
-use serde::Serialize;
+use serde::{Deserialize, Serialize};
 use std::fs::OpenOptions;
-use std::io::{BufWriter, Write};
+use std::io::{BufRead, BufWriter, BufReader, Write};
+use std::time::{SystemTime, UNIX_EPOCH};
 
-#[derive(Serialize)]
+#[derive(Serialize, Deserialize)]
 struct ObservationEntry {
     text: String,
     timestamp: u64,
@@ -48,7 +49,7 @@ async fn execute_task(
         TaskKind::StoreObservation {text} => {
             let observation = ObservationEntry {
                 text,
-                timestamp: chrono::Utc::now().timestamp() as u64,
+                timestamp: SystemTime::now().duration_since(UNIX_EPOCH).unwrap_or_default().as_secs(),
             };
             let file = OpenOptions::new()
                 .create(true)
@@ -59,7 +60,7 @@ async fn execute_task(
             let mut json_line = serde_json::to_vec(&observation).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             json_line.push(b'\n');
             writer.write_all(&json_line).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            writer.flush();
+            writer.flush() .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
             "Observation stored".to_string()
         },
         TaskKind::ListObservations => {
@@ -67,7 +68,7 @@ async fn execute_task(
                 .read(true)
                 .open("observations.jsonl")
                 .map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?;
-            let reader = std::io::BufReader::new(file);
+            let reader = BufReader::new(file);
             let observations: Vec<ObservationEntry> = reader
                 .lines()
                 .filter_map(|line| line.ok())
@@ -114,6 +115,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         capabilities: vec![
             Capability::Tools,
             Capability::Inference,
+            Capability::Storage
         ],
         api_url: agent_url,
     };
