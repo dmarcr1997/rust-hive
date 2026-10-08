@@ -85,6 +85,8 @@ async fn execute_task(
 
 #[tokio::main]
 async fn main() -> Result<(), Box<dyn std::error::Error>> {
+    dotenvy::dotenv().ok();
+
     let mut system = System::new_all();
     system.refresh_all();
      let hostname = hostname::get()?
@@ -102,7 +104,17 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     let memory_mb = system.total_memory() / 1024 / 1024;
 
     let architecture = std::env::consts::ARCH.to_string();
-    
+    let capabilities = std::env::var("HIVE_CAPABILITIES")
+        .unwrap_or_else(|_| "Tools,Inference,Storage".to_string())
+        .split(',')
+        .filter_map(|cap| match cap.trim() {
+            "Tools" => Some(Capability::Tools),
+            "Inference" => Some(Capability::Inference),
+            "Storage" => Some(Capability::Storage),
+            _ => None,
+        })
+        .collect::<Vec<_>>();
+
     let agent_url = std::env::var("HIVE_AGENT_URL")
     .unwrap_or_else(|_| "http://127.0.0.1:9090".to_string());
     let node = NodeInfo {
@@ -112,11 +124,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         cores,
         memory_mb,
         architecture,
-        capabilities: vec![
-            Capability::Tools,
-            Capability::Inference,
-            Capability::Storage
-        ],
+        capabilities,
         api_url: agent_url,
     };
 
