@@ -134,9 +134,10 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
     println!("{:#?}", node);
 
     let client = reqwest::Client::new();
-
+    let control_url = std::env::var("HIVE_CONTROL_URL")
+        .unwrap_or_else(|_| "http://localhost:8080".to_string());
     client
-        .post("http://localhost:8080/nodes/register")
+        .post(format!("{}/nodes/register", control_url))
         .json(&node)
         .send()
         .await?
@@ -155,7 +156,7 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
                 memory_used_mb: system.used_memory() / 1024 / 1024,
             };
             match heartbeat_client
-                .post("http://localhost:8080/nodes/heartbeat")
+                .post(format!("{}/nodes/heartbeat", control_url))
                 .json(&heartbeat)
                 .send()
                 .await
