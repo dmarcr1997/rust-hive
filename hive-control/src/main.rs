@@ -11,7 +11,8 @@ use hive_protocol::{
     NodeStatus,
     NodeSummary,
     TaskAssignment,
-    TaskRequest
+    TaskRequest,
+    TaskResult,
 };
 
 use std::{
@@ -21,6 +22,8 @@ use std::{
 };
 
 use tokio::sync::RwLock;
+
+use reqwest;
 
 const NODE_TIMEOUT: Duration = Duration::from_secs(15);
 
@@ -34,7 +37,8 @@ struct NodeState {
 
 #[derive(Debug, Clone)]
 struct HiveState {
-    nodes: Arc<RwLock<HashMap<String, NodeState>>>
+    nodes: Arc<RwLock<HashMap<String, NodeState>>>,
+    http_client: reqwest::Client,
 }
 
 async fn register_node(
@@ -117,16 +121,59 @@ async fn assign_task(
     }
 }
 
+async fn execute_task(
+    State(state): State<HiveState>,
+    Json(task): Json<TaskRequest>
+) -> Result<Json<TaskResult>, StatusCode> {
+    let selected_node = {
+        let nodes = state.nodes.read().await;
+        nodes
+            .values()
+            .filter(|node| node.last_heartbeat.elapsed() <= NODE_TIMEOUT)
+            .find(|node| node.info.capabilities.contains(&task.capability))
+            .map(|node| node.info.clone())
+    };
+    let node = selected_node.ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+
+    let url = format!("{}/execute", node.api_url.trim_end_matches('/'));
+    println!(
+        "Dispatching to {} at {}",
+        node.hostname,
+        url
+    );
+
+    let response = state
+        .http_client
+        .post(url)
+        .json(&task)
+        .send()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    if !response.status().is_success() {
+        return Err(StatusCode::BAD_GATEWAY);
+    }
+
+    let result = response
+        .json::<TaskResult>()
+        .await
+        .map_err(|_| StatusCode::BAD_GATEWAY)?;
+
+    Ok(Json(result))
+}
+
 #[tokio::main]
 async fn main() {
     let state = HiveState {
-        nodes: Arc::new(RwLock::new(HashMap::new()))
+        nodes: Arc::new(RwLock::new(HashMap::new())),
+        http_client: reqwest::Client::new(),
     };
     let app = Router::new()
         .route("/nodes", get(list_nodes))
         .route("/nodes/register", post(register_node))
         .route("/nodes/heartbeat", post(heartbeat))
         .route("/tasks/assign", post(assign_task))
+        .route("/tasks/execute", post(execute_task))
         .with_state(state);
     let listener = tokio::net::TcpListener::bind("0.0.0.0:8080")
         .await
