@@ -23,6 +23,9 @@ use std::fs::OpenOptions;
 use std::io::{BufRead, BufWriter, BufReader, Write};
 use std::time::{SystemTime, UNIX_EPOCH};
 
+mod ollama;
+use ollama::OllamaClient;
+
 #[derive(Serialize, Deserialize)]
 struct ObservationEntry {
     text: String,
@@ -33,12 +36,18 @@ struct ObservationEntry {
 struct AgentState {
     node_id: String,
     capabilities: Arc<Vec<Capability>>,
+    ollama: Option<OllamaClient>,
 }
 
 async fn execute_task(
     State(state): State<AgentState>,
     Json(task_request): Json<TaskRequest>,
 ) -> Result<Json<TaskResult>, StatusCode> {
+    if matches!(&task_request.task, TaskKind::GenerateText { .. })
+            && task_request.capability != Capability::Inference
+        {
+            return Err(StatusCode::BAD_REQUEST);
+        }
     if !state.capabilities.contains(&task_request.capability) {
         return Err(StatusCode::FORBIDDEN);
     }
@@ -75,7 +84,26 @@ async fn execute_task(
                 .filter_map(|line| serde_json::from_str(&line).ok())
                 .collect();
             serde_json::to_string(&observations).map_err(|_| StatusCode::INTERNAL_SERVER_ERROR)?
-        }
+        },
+        TaskKind::GenerateText { prompt } => {
+            if prompt.trim().is_empty() {
+                return Err(StatusCode::BAD_REQUEST);
+            }
+
+            let ollama = state.ollama
+                .as_ref()
+                .ok_or(StatusCode::SERVICE_UNAVAILABLE)?;
+
+            ollama.generate(&prompt).await.map_err(|error| {
+                eprintln!("Ollama generation failed: {error}");
+
+                if error.is_timeout() {
+                    StatusCode::GATEWAY_TIMEOUT
+                } else {
+                    StatusCode::BAD_GATEWAY
+                }
+            })?
+        },
     };
     Ok(Json(TaskResult {
         node_id: state.node_id.clone(),
@@ -109,7 +137,6 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
         .split(',')
         .filter_map(|cap| match cap.trim() {
             "Tools" => Some(Capability::Tools),
-            "Inference" => Some(Capability::Inference),
             "Storage" => Some(Capability::Storage),
             _ => None,
         })
@@ -117,8 +144,14 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let agent_url = std::env::var("HIVE_AGENT_URL")
     .unwrap_or_else(|_| "http://127.0.0.1:9090".to_string());
+    let ollama = if capabilities.contains(&Capability::Inference) {
+        Some(OllamaClient::from_env()?)
+    } else {
+        None
+    };
     let node = NodeInfo {
-        id: hostname.clone(),
+        id: std::env::var("HIVE_NODE_ID")
+            .unwrap_or_else(|_| hostname.clone()),
         hostname,
         cpu,
         cores,
@@ -182,18 +215,20 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let agent_state = AgentState {
         node_id: node_id.clone(),
-        capabilities: Arc::new(node.capabilities.clone())
+        capabilities: Arc::new(node.capabilities.clone()),
+        ollama,
     };
 
     let app = Router::new()
         .route("/execute", post(execute_task))
         .with_state(agent_state);
 
-    let listener =
-    tokio::net::TcpListener::bind("0.0.0.0:9090")
-        .await?;
+    let bind_address = std::env::var("HIVE_AGENT_BIND")
+    .unwrap_or_else(|_| "0.0.0.0:9090".to_string());
 
-    println!("Hive agent listening on port 9090");
+    let listener = tokio::net::TcpListener::bind(&bind_address).await?;
+
+    println!("Hive agent listening on {bind_address}");
 
     axum::serve(listener, app).await?;
     Ok(())

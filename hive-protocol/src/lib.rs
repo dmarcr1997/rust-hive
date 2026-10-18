@@ -54,6 +54,9 @@ pub enum TaskKind {
         text: String,
     },
     ListObservations,
+    GenerateText {
+        prompt: String,
+    }
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
