@@ -133,10 +133,11 @@ async fn main() -> Result<(), Box<dyn std::error::Error>> {
 
     let architecture = std::env::consts::ARCH.to_string();
     let capabilities = std::env::var("HIVE_CAPABILITIES")
-        .unwrap_or_else(|_| "Tools,Inference,Storage".to_string())
+        .unwrap_or_else(|_| "Tools,Storage".to_string())
         .split(',')
         .filter_map(|cap| match cap.trim() {
             "Tools" => Some(Capability::Tools),
+            "Inference" => Some(Capability::Inference),
             "Storage" => Some(Capability::Storage),
             _ => None,
         })
